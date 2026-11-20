@@ -303,7 +303,7 @@ func (attach *VPCAttachment) Validate(ctx context.Context, kube kclient.Reader, 
 			switch vpc.Spec.Mode {
 			case VPCModeL2VNI:
 				if !spf.L2VNI || !spf.L3VNI {
-					return nil, errors.Errorf("vpc mode %s is not supported on switch profile %s", vpc.Spec.Mode, sw.Spec.Profile)
+					return nil, errors.Errorf("vpc mode l2vni is not supported on switch profile %s", sw.Spec.Profile)
 				}
 			case VPCModeL3VNI, VPCModeL3Flat:
 				if !spf.L3VNI {

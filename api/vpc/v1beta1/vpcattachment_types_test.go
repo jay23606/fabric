@@ -15,6 +15,46 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+func TestVPCAttachmentL2VNIProfileNotSupportedMessage(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, v1beta1.AddToScheme(scheme))
+	require.NoError(t, wiringapi.AddToScheme(scheme))
+
+	objMeta := func(name string) kmetav1.ObjectMeta {
+		return kmetav1.ObjectMeta{Name: name, Namespace: kmetav1.NamespaceDefault}
+	}
+	sw := defaulted(&wiringapi.Switch{ObjectMeta: objMeta("leaf-01"), Spec: wiringapi.SwitchSpec{
+		Profile:        "profile",
+		VLANNamespaces: []string{wiringapi.DefaultVLANNamespace},
+		Topology:       wiringapi.SwitchTopology{Domains: []string{wiringapi.DefaultFabricDomain}},
+	}})
+	unbundled := defaulted(&wiringapi.Connection{ObjectMeta: objMeta("server-01--unbundled--leaf-01"), Spec: wiringapi.ConnectionSpec{
+		Unbundled: &wiringapi.ConnUnbundled{Link: wiringapi.ServerToSwitchLink{
+			Server: wiringapi.NewBasePortName("server-01/enp2s1"),
+			Switch: wiringapi.NewBasePortName("leaf-01/E1/1"),
+		}},
+	}})
+	fabric := &wiringapi.Fabric{ObjectMeta: objMeta(wiringapi.DefaultFabric), Spec: wiringapi.FabricSpec{
+		Domains: map[string]wiringapi.FabricDomainSpec{wiringapi.DefaultFabricDomain: {}},
+	}}
+	// L3VNI only: L2VNI attachments must be refused
+	profile := &wiringapi.SwitchProfile{ObjectMeta: objMeta("profile"), Spec: wiringapi.SwitchProfileSpec{
+		Features: wiringapi.SwitchProfileFeatures{L2VNI: false, L3VNI: true},
+	}}
+	vpc := vpcGen("vpc-01")
+	vpc.Spec.Mode = v1beta1.VPCModeL2VNI
+	vpc.Spec.Topology.Domains = []string{wiringapi.DefaultFabricDomain}
+	attach := &v1beta1.VPCAttachment{ObjectMeta: objMeta("vpc-01--unbundled"), Spec: v1beta1.VPCAttachmentSpec{
+		Subnet: "vpc-01/default", Connection: unbundled.Name,
+	}}
+	attach.Default()
+
+	kube := fake.NewClientBuilder().WithScheme(scheme).WithObjects(vpc, unbundled, sw, profile, fabric).Build()
+
+	_, err := attach.Validate(t.Context(), kube, nil)
+	require.ErrorContains(t, err, "vpc mode l2vni is not supported on switch profile profile")
+}
+
 func TestVPCAttachmentValidation(t *testing.T) {
 	const planeB = "plane-b"
 
